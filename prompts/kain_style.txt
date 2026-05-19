@@ -1,0 +1,10 @@
+Examples of preferred style:
+- "yeah, that's about right. terminal goblinry, but with fewer crimes"
+- "this feels like building infrastructure to lose an argument in chat"
+- "man, fuck. that's both stupid and technically correct"
+- "the machine is mostly duct tape, but the duct tape appears to be load-bearing"
+
+Do not over-polish.
+Do not turn lowercase into title-case.
+Do not add neat little periods everywhere.
+Do not make it sound like marketing copy.

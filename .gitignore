@@ -1,0 +1,23 @@
+# secrets / local env
+.env
+*.env
+secrets/
+local/
+*.token
+*.secret
+*_token*
+*_secret*
+
+# runtime chat dump
+runtime/
+recent_chat.json
+
+# python junk
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# editor junk
+*.swp
+*~
