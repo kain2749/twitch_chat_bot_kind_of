@@ -22,6 +22,8 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.5")
 CONTEXT_PATH = Path("runtime/recent_chat.json")
 STYLE_PATH = Path("prompts/kain_style.txt")
 
+AUTO_SEND = os.environ.get("TWITCH_AUTO_SEND", "").lower() in {"1", "true", "yes", "y"}
+
 MAX_CHAT_MESSAGES = 25
 MAX_OUTPUT_TOKENS = 200
 MAX_TWITCH_CHARS = 450
@@ -171,7 +173,10 @@ def send_chat(sock, message):
 
 def main():
     print(f"LLM Twitch sender connected target: #{CHANNEL}")
-    print("type raw draft, review rewrite, then choose y/e/r/n")
+    if AUTO_SEND:
+        print("AUTO_SEND enabled: raw draft -> LLM rewrite -> immediate send")
+    else:
+        print("review mode: raw draft -> LLM rewrite -> approve before send")
     print("commands: /quit exits; slash commands are not sent")
 
     sock = connect_twitch()
@@ -202,6 +207,18 @@ def main():
                 if not ok:
                     print(f"[blocked rewrite] {reason}")
                     print(f"rewrite was: {rewritten}")
+                    break
+
+                if AUTO_SEND:
+                    now = time.time()
+                    wait = 1.1 - (now - last_sent_at)
+
+                    if wait > 0:
+                        time.sleep(wait)
+
+                    send_chat(sock, rewritten)
+                    last_sent_at = time.time()
+                    print(f"[auto-sent] {rewritten}")
                     break
 
                 print("\nrewrite:")
