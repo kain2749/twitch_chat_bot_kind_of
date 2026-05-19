@@ -1,3 +1,5 @@
+![using an LLM to pretend to be a bot when I'm actually not a bot except I am](docs/images/fun_with_irc.png)
+
 # twitch_chat_bot_kind_of
 
 A small local Twitch chat helper.
