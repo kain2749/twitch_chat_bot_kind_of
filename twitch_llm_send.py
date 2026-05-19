@@ -338,8 +338,6 @@ def main():
             if draft == "/quit":
                 break
 
-            already_final = False
-
             if draft == "s":
                 picked = pick_suggestion()
 
@@ -347,64 +345,17 @@ def main():
                     continue
 
                 draft = picked
-                already_final = True
                 print(f"\nselected:\n{draft}")
-
-            elif draft == "t":
-                topic = input("topic> ").strip()
-
-                if not topic:
-                    print("[cancelled]")
-                    continue
-
-                try:
-                    generated = generate_topic_comment(topic)
-                except Exception as exc:
-                    print(f"[openai topic error] {exc}")
-                    continue
-
-                if not generated:
-                    print("[no usable topic comment]")
-                    continue
-
-                draft = generated
-                already_final = True
-                print(f"\ntopic comment:\n{draft}")
-
-            elif draft.startswith("t "):
-                topic = draft[2:].strip()
-
-                if not topic:
-                    print("[missing topic]")
-                    continue
-
-                try:
-                    generated = generate_topic_comment(topic)
-                except Exception as exc:
-                    print(f"[openai topic error] {exc}")
-                    continue
-
-                if not generated:
-                    print("[no usable topic comment]")
-                    continue
-
-                draft = generated
-                already_final = True
-                print(f"\ntopic comment:\n{draft}")
 
             ok, reason = validate_message(draft)
             if not ok:
                 print(f"[blocked raw] {reason}")
                 continue
 
-        current_draft = draft
+            current_draft = draft
 
-        while True:
-            try:
-                if already_final:
-                    rewritten = current_draft
-                    already_final = False
-                else:
+            while True:
+                try:
                     rewritten = rewrite_message(current_draft)
                 except Exception as exc:
                     print(f"[openai error] {exc}")
