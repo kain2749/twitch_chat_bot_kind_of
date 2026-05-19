@@ -18,6 +18,8 @@ TOKEN = os.environ["TWITCH_OAUTH_TOKEN"]
 CHANNEL = os.environ.get("TWITCH_CHANNEL", "piratesoftware").lower().lstrip("#")
 
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.5")
+MAX_SUGGESTIONS = 8
+SUGGESTION_OUTPUT_TOKENS = 700
 
 CONTEXT_PATH = Path("runtime/recent_chat.json")
 STYLE_PATH = Path("prompts/kain_style.txt")
@@ -129,6 +131,67 @@ def clean_model_output(text):
     return text
 
 
+def suggest_messages():
+    chat_context = format_chat_context(load_recent_chat())
+
+    instructions = """
+You suggest possible Twitch chat messages for the user.
+
+Rules:
+- Read the recent Twitch chat context.
+- Suggest things the user could plausibly say right now.
+- Match the user's style: blunt, casual, dry, technically literate, slightly tired.
+- Keep casual lowercase where natural.
+- Do not sound like an AI assistant.
+- Do not over-polish.
+- Do not invent facts.
+- Do not escalate harassment, threats, slurs, or moderation evasion.
+- Do not suggest slash commands.
+- Keep every suggestion under 300 characters.
+- Return only a JSON array of strings.
+"""
+
+    prompt = f"""
+Recent Twitch chat context:
+{chat_context}
+
+Return {MAX_SUGGESTIONS} possible Twitch chat messages.
+"""
+
+    response = client.responses.create(
+        model=OPENAI_MODEL,
+        instructions=instructions.strip() + "\n\nLocal style notes/examples:\n" + load_style(),
+        input=prompt,
+        max_output_tokens=SUGGESTION_OUTPUT_TOKENS,
+    )
+
+    text = clean_model_output(response.output_text)
+
+    try:
+        suggestions = json.loads(text)
+    except json.JSONDecodeError:
+        # fallback if the model gets cute and returns bullets
+        suggestions = []
+        for line in text.splitlines():
+            line = line.strip()
+            line = re.sub(r"^[-*\d.)\s]+", "", line).strip()
+            if line:
+                suggestions.append(line)
+
+    cleaned = []
+
+    for suggestion in suggestions:
+        suggestion = str(suggestion).strip()
+
+        if not suggestion:
+            continue
+
+        ok, reason = validate_message(suggestion)
+        if ok:
+            cleaned.append(suggestion)
+
+    return cleaned[:MAX_SUGGESTIONS]
+
 def rewrite_message(draft):
     chat_context = format_chat_context(load_recent_chat())
 
@@ -151,7 +214,40 @@ Rewrite the raw draft for Twitch chat.
 
     return clean_model_output(response.output_text)
 
+def pick_suggestion():
+    try:
+        suggestions = suggest_messages()
+    except Exception as exc:
+        print(f"[openai suggestion error] {exc}")
+        return None
 
+    if not suggestions:
+        print("[no usable suggestions]")
+        return None
+
+    print("\nsuggestions:")
+
+    for index, suggestion in enumerate(suggestions, start=1):
+        print(f"{index}. {suggestion}")
+
+    while True:
+        choice = input("\npick 1-8 / [r] regenerate / [n] cancel > ").strip().lower()
+
+        if choice == "n":
+            print("[cancelled]")
+            return None
+
+        if choice == "r":
+            return pick_suggestion()
+
+        if choice.isdigit():
+            index = int(choice)
+
+            if 1 <= index <= len(suggestions):
+                return suggestions[index - 1]
+
+        print("[pick a number, r, or n]")
+        
 def validate_message(message):
     message = message.strip()
 
@@ -188,6 +284,15 @@ def main():
 
             if draft == "/quit":
                 break
+
+            if draft == "s":
+                picked = pick_suggestion()
+
+                if not picked:
+                    continue
+
+                draft = picked
+                print(f"\nselected:\n{draft}")
 
             ok, reason = validate_message(draft)
             if not ok:
