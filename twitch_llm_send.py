@@ -20,6 +20,7 @@ CHANNEL = os.environ.get("TWITCH_CHANNEL", "piratesoftware").lower().lstrip("#")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.5")
 MAX_SUGGESTIONS = 8
 SUGGESTION_OUTPUT_TOKENS = 700
+TOPIC_OUTPUT_TOKENS = 180
 
 CONTEXT_PATH = Path("runtime/recent_chat.json")
 STYLE_PATH = Path("prompts/kain_style.txt")
@@ -129,6 +130,58 @@ def clean_model_output(text):
         text = text[1:-1].strip()
 
     return text
+
+def generate_topic_comment(topic):
+    topic = topic.strip()
+    chat_context = format_chat_context(load_recent_chat())
+
+    if not topic:
+        return None
+
+    instructions = """
+You write one Twitch chat message for the user.
+
+Rules:
+- The user provides the topic.
+- Write one short Twitch chat message about that topic.
+- Match the user's style: blunt, casual, dry, technically literate, slightly tired.
+- Preserve casual lowercase where natural.
+- Do not sound like an AI assistant.
+- Do not over-polish.
+- Do not add formal punctuation unless needed.
+- Do not use em dashes.
+- Do not use hashtags.
+- Do not invent facts.
+- Use general knowledge only for explaining concepts.
+- Use recent chat only as ambient context.
+- Do not claim something is happening on stream unless the topic says it or recent chat clearly supports it.
+- Do not escalate harassment, threats, slurs, or moderation evasion.
+- Keep it under 300 characters.
+- Return only the Twitch message. No quotes. No explanation.
+"""
+
+    style_notes = ""
+    if STYLE_PATH.exists():
+        style_notes = STYLE_PATH.read_text(encoding="utf-8").strip()
+
+    prompt = f"""
+Recent Twitch chat context:
+{chat_context}
+
+User topic:
+{topic}
+
+Write one Twitch chat message about the user topic.
+"""
+
+    response = client.responses.create(
+        model=OPENAI_MODEL,
+        instructions=instructions.strip() + "\n\nLocal style notes/examples:\n" + style_notes,
+        input=prompt,
+        max_output_tokens=TOPIC_OUTPUT_TOKENS,
+    )
+
+    return clean_model_output(response.output_text)
 
 
 def suggest_messages():
@@ -285,6 +338,8 @@ def main():
             if draft == "/quit":
                 break
 
+            already_final = False
+
             if draft == "s":
                 picked = pick_suggestion()
 
@@ -292,17 +347,64 @@ def main():
                     continue
 
                 draft = picked
+                already_final = True
                 print(f"\nselected:\n{draft}")
+
+            elif draft == "t":
+                topic = input("topic> ").strip()
+
+                if not topic:
+                    print("[cancelled]")
+                    continue
+
+                try:
+                    generated = generate_topic_comment(topic)
+                except Exception as exc:
+                    print(f"[openai topic error] {exc}")
+                    continue
+
+                if not generated:
+                    print("[no usable topic comment]")
+                    continue
+
+                draft = generated
+                already_final = True
+                print(f"\ntopic comment:\n{draft}")
+
+            elif draft.startswith("t "):
+                topic = draft[2:].strip()
+
+                if not topic:
+                    print("[missing topic]")
+                    continue
+
+                try:
+                    generated = generate_topic_comment(topic)
+                except Exception as exc:
+                    print(f"[openai topic error] {exc}")
+                    continue
+
+                if not generated:
+                    print("[no usable topic comment]")
+                    continue
+
+                draft = generated
+                already_final = True
+                print(f"\ntopic comment:\n{draft}")
 
             ok, reason = validate_message(draft)
             if not ok:
                 print(f"[blocked raw] {reason}")
                 continue
 
-            current_draft = draft
+        current_draft = draft
 
-            while True:
-                try:
+        while True:
+            try:
+                if already_final:
+                    rewritten = current_draft
+                    already_final = False
+                else:
                     rewritten = rewrite_message(current_draft)
                 except Exception as exc:
                     print(f"[openai error] {exc}")
